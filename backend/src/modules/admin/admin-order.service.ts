@@ -19,16 +19,16 @@ import {
   type AdminDashboardDto,
   type AdminOrderSummaryDto,
   type CursorPage,
-} from '../../shared';
-import { startOfZonedDay, endOfZonedDay } from '../../shared/datetime';
-import { AppError } from '../../common/errors';
-import { prisma } from '../../infra/db/prisma';
-import * as storeService from '../stores/store.service';
-import * as inventoryService from '../inventory/inventory.service';
-import * as deliveryService from '../delivery/delivery.service';
-import * as orderService from '../orders/order.service';
-import * as paymentService from '../payments/payment.service';
-import { transitionOrder } from '../orders/order-state.service';
+} from "../../shared";
+import { startOfZonedDay, endOfZonedDay } from "../../shared/datetime";
+import { AppError } from "../../common/errors";
+import { prisma } from "../../infra/db/prisma";
+import * as storeService from "../stores/store.service";
+import * as inventoryService from "../inventory/inventory.service";
+import * as deliveryService from "../delivery/delivery.service";
+import * as orderService from "../orders/order.service";
+import * as paymentService from "../payments/payment.service";
+import { transitionOrder } from "../orders/order-state.service";
 
 /* -------------------------------------------------------------------------- */
 /* Dashboard                                                                  */
@@ -54,7 +54,9 @@ export async function getDashboard(): Promise<AdminDashboardDto> {
     cancelledToday,
     lowStock,
   ] = await Promise.all([
-    prisma.order.count({ where: { storeId: store.id, createdAt: { gte: dayStart, lte: dayEnd } } }),
+    prisma.order.count({
+      where: { storeId: store.id, createdAt: { gte: dayStart, lte: dayEnd } },
+    }),
     prisma.order.aggregate({
       _sum: { totalPaise: true },
       where: {
@@ -69,11 +71,13 @@ export async function getDashboard(): Promise<AdminDashboardDto> {
       where: { storeId: store.id, status: OrderStatus.DELIVERED },
     }),
     prisma.order.groupBy({
-      by: ['status'],
+      by: ["status"],
       _count: { _all: true },
       where: { storeId: store.id, status: { in: [...ACTIVE_ORDER_STATUSES] } },
     }),
-    prisma.order.count({ where: { storeId: store.id, status: OrderStatus.ORDER_PLACED } }),
+    prisma.order.count({
+      where: { storeId: store.id, status: OrderStatus.ORDER_PLACED },
+    }),
     prisma.order.count({
       where: {
         storeId: store.id,
@@ -96,7 +100,10 @@ export async function getDashboard(): Promise<AdminDashboardDto> {
     todayRevenuePaise: todayRevenue._sum.totalPaise ?? 0,
     totalOrderCount: totalOrders,
     totalRevenuePaise: totalRevenue._sum.totalPaise ?? 0,
-    ordersByStatus: byStatus.map((row) => ({ status: row.status, count: row._count._all })),
+    ordersByStatus: byStatus.map((row) => ({
+      status: row.status,
+      count: row._count._all,
+    })),
     pendingOrderCount: pendingCount,
     completedTodayCount: completedToday,
     cancelledTodayCount: cancelledToday,
@@ -125,29 +132,38 @@ export async function listOrders(options: {
       ...(options.search
         ? {
             OR: [
-              { orderNumber: { contains: options.search, mode: 'insensitive' } },
+              {
+                orderNumber: { contains: options.search, mode: "insensitive" },
+              },
               { deliveryMobile: { contains: options.search } },
-              { deliveryFullName: { contains: options.search, mode: 'insensitive' } },
+              {
+                deliveryFullName: {
+                  contains: options.search,
+                  mode: "insensitive",
+                },
+              },
             ],
           }
         : {}),
-      ...(options.cursor ? { createdAt: { lt: new Date(options.cursor) } } : {}),
+      ...(options.cursor
+        ? { createdAt: { lt: new Date(options.cursor) } }
+        : {}),
     },
     include: {
       items: { select: { qty: true, imageUrl: true } },
       assignments: {
-        where: { status: { not: 'CANCELLED' } },
+        where: { status: { not: "CANCELLED" } },
         include: { agent: { select: { name: true } } },
         take: 1,
       },
       payments: {
-        where: { status: 'PENDING' },
-        orderBy: { createdAt: 'desc' },
+        where: { status: "PENDING" },
+        orderBy: { createdAt: "desc" },
         take: 1,
         select: { rawPayload: true },
       },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: "desc" },
     take: options.limit + 1,
   });
 
@@ -202,14 +218,21 @@ export async function getOrderForAdmin(orderId: string) {
     where: { id: orderId },
     include: {
       items: true,
-      statusHistory: { orderBy: { createdAt: 'asc' }, include: { actor: true } },
+      statusHistory: {
+        orderBy: { createdAt: "asc" },
+        include: { actor: true },
+      },
       payments: true,
       refunds: true,
       user: { select: { id: true, fullName: true, mobile: true, email: true } },
-      assignments: { include: { agent: true }, orderBy: { assignedAt: 'desc' } },
+      assignments: {
+        include: { agent: true },
+        orderBy: { assignedAt: "desc" },
+      },
     },
   });
-  if (!order) throw new AppError(ErrorCode.NOT_FOUND, { message: 'Order not found.' });
+  if (!order)
+    throw new AppError(ErrorCode.NOT_FOUND, { message: "Order not found." });
   return order;
 }
 
@@ -222,7 +245,6 @@ export interface UpdateStatusInput {
   toStatus: OrderStatus;
   actorUserId: string;
   reason?: string | null;
-  deliveryOtp?: string | null;
   cashCollectedPaise?: number | null;
 }
 
@@ -234,24 +256,23 @@ export interface UpdateStatusInput {
  *   - COD delivery requires the customer's OTP (proof it reached them)
  *   - rejecting a paid order auto-refunds
  */
-export async function updateOrderStatus(input: UpdateStatusInput): Promise<void> {
+export async function updateOrderStatus(
+  input: UpdateStatusInput,
+): Promise<void> {
   const order = await prisma.order.findUnique({
     where: { id: input.orderId },
-    include: { assignments: { where: { status: { not: 'CANCELLED' } }, take: 1 } },
+    include: {
+      assignments: { where: { status: { not: "CANCELLED" } }, take: 1 },
+    },
   });
-  if (!order) throw new AppError(ErrorCode.NOT_FOUND, { message: 'Order not found.' });
+  if (!order)
+    throw new AppError(ErrorCode.NOT_FOUND, { message: "Order not found." });
 
-  if (input.toStatus === OrderStatus.OUT_FOR_DELIVERY && order.assignments.length === 0) {
+  if (
+    input.toStatus === OrderStatus.OUT_FOR_DELIVERY &&
+    order.assignments.length === 0
+  ) {
     throw new AppError(ErrorCode.DELIVERY_AGENT_REQUIRED);
-  }
-
-  if (input.toStatus === OrderStatus.DELIVERED && order.deliveryOtpHash) {
-    if (!input.deliveryOtp) {
-      throw new AppError(ErrorCode.DELIVERY_OTP_INVALID, {
-        message: 'Ask the customer for their 4-digit delivery OTP.',
-      });
-    }
-    await orderService.verifyDeliveryOtp(order.id, input.deliveryOtp);
   }
 
   await transitionOrder({
@@ -278,7 +299,7 @@ export async function updateOrderStatus(input: UpdateStatusInput): Promise<void>
   ) {
     await paymentService.refundIfPaid(
       order.id,
-      input.reason ?? 'Order cancelled by the store',
+      input.reason ?? "Order cancelled by the store",
     );
   }
 }
