@@ -1,0 +1,101 @@
+# =============================================================================
+# AdiOne — production stack (Task 17.1)
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Only the web container publishes a port. Postgres, Redis and the API are
+# reachable only on the internal network — a database exposed to the internet
+# is the most common way a small deployment is compromised.
+#
+# TLS is terminated by a reverse proxy in front of this stack (Caddy or an
+# Nginx with certbot); see docs/06-deployment.md.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Backups land on the host so they survive the container.
+      - ./backups:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # No `ports:` — internal only.
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    # noeviction: OTPs and rate-limit counters must never be silently dropped
+    # under memory pressure. Failing loudly beats letting a limit evaporate.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    restart: always
+    env_file: ./backend/.env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS: 'true'
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Migrations run BEFORE the server starts, and a failure stops the
+    # container rather than letting it serve against an outdated schema.
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+
+  web:
+    build:
+      context: ./web
+    restart: always
+    ports:
+      - '8080:80'
+    depends_on:
+      - api
+
+  # Nightly logical backup. Retains 14 days — enough to notice corruption that
+  # went unspotted for a week, without unbounded disk growth.
+  #
+  # A BACKUP THAT HAS NEVER BEEN RESTORED IS NOT A BACKUP. See
+  # docs/06-deployment.md for the restore drill.
+  backup:
+    image: postgres:16-alpine
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} -Fc
+          -f /backups/adione-$$(date +%Y%m%d-%H%M%S).dump &&
+        find /backups -name "adione-*.dump" -mtime +14 -delete;
+        sleep 86400;
+      done'
+
+volumes:
+  pgdata:
+  redisdata:
+

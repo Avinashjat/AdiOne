@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AdiOne — Store Panel</title>
+    <meta name="description" content="AdiOne store and admin panel" />
+
+    <!--
+      SVG first: browsers that support it get a mark that stays crisp on a
+      high-DPI screen and in the tab-strip at any zoom. The 32/16px PNGs are
+      the fallback for everything else, and are hand-tuned rasterisations
+      rather than browser-downscaled, which matters at 16px.
+    -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Colours the Android browser chrome when the panel is saved to a home
+         screen, which is how the counter tablet is meant to run it. -->
+    <meta name="theme-color" content="#1E8E3E" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

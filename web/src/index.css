@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 font-sans text-gray-900 antialiased;
+  }
+}
+
+/* Thermal-printer-friendly pick slip: the store prints the order to pack it,
+   and everything but the order detail is noise on paper. */
+@media print {
+  header,
+  nav,
+  button {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}

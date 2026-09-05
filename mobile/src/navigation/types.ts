@@ -1,0 +1,66 @@
+/**
+ * Typed navigation params.
+ *
+ * Declaring param lists means a screen cannot be pushed without the data it
+ * needs — the OTP screen is unreachable without a mobile number, tracking
+ * without an order id.
+ */
+
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+
+export type AuthStackParamList = {
+  Splash: undefined;
+  MobileEntry: undefined;
+  OtpVerify: {
+    mobile: string;
+    resendAfterSeconds: number;
+    devOtp?: string | undefined;
+  };
+};
+
+/**
+ * Product detail, checkout and tracking are declared in EVERY stack that can
+ * reach them. Pushing onto the current stack (rather than jumping to a shared
+ * one) is what keeps the back button doing what the customer expects — back
+ * from a product opened in Search returns to Search, not to Home.
+ */
+export type CatalogStackParamList = {
+  Home: undefined;
+  Categories: { categoryId?: string } | undefined;
+  Search: undefined;
+  ProductDetail: { productId: string };
+  SelectLocation: undefined;
+  AddressForm: undefined;
+};
+
+export type CartStackParamList = {
+  Cart: undefined;
+  Checkout: undefined;
+  UpiPayment: { orderId: string };
+  OrderTracking: { orderId: string };
+  Addresses: undefined;
+  AddressForm: undefined;
+  ProductDetail: { productId: string };
+};
+
+export type AccountStackParamList = {
+  Account: undefined;
+  Orders: undefined;
+  OrderTracking: { orderId: string };
+  Addresses: undefined;
+  AddressForm: undefined;
+  PersonalInfo: undefined;
+  Help: undefined;
+  About: undefined;
+  Legal: { slug: "privacy" | "terms" };
+};
+
+export type AuthScreenProps<T extends keyof AuthStackParamList> =
+  NativeStackScreenProps<AuthStackParamList, T>;
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace ReactNavigation {
+    interface RootParamList extends AuthStackParamList {}
+  }
+}

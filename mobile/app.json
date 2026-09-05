@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "AdiOne",
+    "slug": "adione",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "adione",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/adione-icon.png",
+    "splash": {
+      "image": "./assets/adione-icon.png",
+      "backgroundColor": "#FFFFFF",
+      "resizeMode": "contain"
+    },
+    "notification": {
+      "icon": "./assets/adione-icon.png",
+      "color": "#1E8E3E"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "in.adione.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adione-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "INTERNET",
+        "POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "in.adione.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "AdiOne uses your location to check whether we deliver to your area and to estimate your delivery time."
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "AdiOne uses your location to check whether we deliver to your area and to estimate your delivery time."
+        }
+      ],
+      "expo-secure-store",
+      "./plugins/withUpiQueries",
+      "./plugins/withGradleNetworkTimeout",
+      "expo-font",
+      "expo-router"
+    ],
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:4000/api/v1",
+      "eas": {
+        "projectId": "562833a4-d096-4c49-9bed-54b634bf6d80"
+      }
+    }
+  }
+}
