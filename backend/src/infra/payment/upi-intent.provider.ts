@@ -1,34 +1,25 @@
 /**
  * UPI intent provider — pay directly to the shop's VPA.
  *
- * HOW THIS DIFFERS FROM A PAYMENT GATEWAY, and why the rest of the flow is
- * shaped the way it is:
+ * HOW THIS DIFFERS FROM A PAYMENT GATEWAY:
  *
- * A `upi://pay?...` deep link hands the customer to their own UPI app. The
- * money moves bank-to-bank, straight into the shop's account. There is NO
- * callback, NO webhook and NO API to query — nothing ever tells this server
- * that a payment succeeded.
+ * A `upi://pay?...` deep link hands the customer to their own UPI app.
+ * The money moves directly into the shop's account. There is NO callback,
+ * NO webhook and NO provider API that can reliably tell this server that
+ * the payment succeeded.
  *
- * So `verify()` here does NOT verify. It cannot. Trusting the app's claim
- * would mean any customer could tap "I have paid" and receive goods for free.
- * Instead:
- *
- *   1. the customer pays in their UPI app and taps "I have paid",
- *      optionally entering the 12-digit UTR from their receipt;
- *   2. the order waits, with stock still reserved, in a queue the store sees;
- *   3. the STORE checks its own UPI app and confirms — that confirmation is
- *      the only thing that moves the order forward.
- *
- * This is exactly how small merchants operate today, and the manual step is
- * the honest cost of not using a gateway. Switch PAYMENT_PROVIDER=razorpay to
- * get automatic settlement back.
+ * Therefore this provider deliberately does NOT automatically verify payment.
+ * The customer can return to the app after attempting payment, but the order
+ * remains pending until an authorized admin confirms that the money was
+ * actually received in the merchant's UPI/bank account.
  */
 
-import { randomUUID } from 'node:crypto';
-import { env } from '../../config/env';
-import { moduleLogger } from '../../common/logger';
-import { AppError } from '../../common/errors';
-import { ErrorCode } from '../../shared';
+import { randomUUID } from "node:crypto";
+
+import { env } from "../../config/env";
+import { moduleLogger } from "../../common/logger";
+import { AppError } from "../../common/errors";
+import { ErrorCode } from "../../shared";
 import type {
   CreateIntentInput,
   CreateIntentResult,
@@ -37,20 +28,31 @@ import type {
   VerifyInput,
   VerifyResult,
   WebhookEvent,
-} from './index';
+} from "./index";
 
-const log = moduleLogger('payment:upi');
+const log = moduleLogger("payment:upi");
 
 /**
  * Builds the NPCI-standard UPI intent URL.
  *
- *   pa  payee VPA          tn  transaction note (our order number)
- *   pn  payee name         tr  transaction reference
- *   am  amount in RUPEES   cu  currency
+ * pa = payee / merchant VPA
+ * pn = payee / merchant name
+ * am = amount in RUPEES
+ * tr = transaction/reference ID
+ * tn = transaction note
+ * cu = currency
  *
- * `am` is rupees with two decimals, NOT paise — the one place in this codebase
- * where an amount leaves in rupee form, because the UPI spec requires it.
- * Getting this wrong would charge 100x.
+ * IMPORTANT:
+ * `amountPaise` is the internal server amount.
+ * UPI requires `am` in rupees, so we convert paise -> rupees here.
+ *
+ * Example:
+ *
+ * amountPaise: 25300
+ *
+ * becomes:
+ *
+ * am=253.00
  */
 export function buildUpiIntentUrl(input: {
   vpa: string;
@@ -58,88 +60,153 @@ export function buildUpiIntentUrl(input: {
   amountPaise: number;
   orderNumber: string;
 }): string {
+  if (!input.vpa || !input.vpa.trim()) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, {
+      message: "Merchant UPI ID is not configured.",
+    });
+  }
+
+  if (!Number.isInteger(input.amountPaise) || input.amountPaise <= 0) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, {
+      message: "Invalid payment amount.",
+    });
+  }
+
+  if (!input.orderNumber || !input.orderNumber.trim()) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, {
+      message: "Invalid order reference.",
+    });
+  }
+
   const params = new URLSearchParams({
-    pa: input.vpa,
-    pn: input.payeeName,
+    pa: input.vpa.trim(),
+    pn: input.payeeName.trim() || "AdiOne",
+
+    // UPI requires the amount in rupees, not paise.
     am: (input.amountPaise / 100).toFixed(2),
-    cu: 'INR',
-    tn: `AdiOne order ${input.orderNumber}`,
-    tr: input.orderNumber,
+
+    // Unique order/reference identifier.
+    tr: input.orderNumber.trim(),
+
+    // Human-readable payment note.
+    tn: `AdiOne Order ${input.orderNumber.trim()}`,
+
+    cu: "INR",
   });
+
   return `upi://pay?${params.toString()}`;
 }
 
 export class UpiIntentProvider implements PaymentProvider {
-  readonly name = 'upi_intent';
+  readonly name = "upi_intent";
 
+  /**
+   * Direct UPI has no gateway public key.
+   *
+   * This method is retained for compatibility with the existing
+   * PaymentProvider interface.
+   *
+   * The actual merchant UPI ID is now obtained by payment.service.ts from:
+   *
+   *   ConfigKey.ADIONE_UPI_ID
+   *
+   * and therefore this method must NOT be used as the source of truth
+   * for merchant configuration.
+   */
   publicKey(): string {
-    // The VPA is public by design — it is printed on shop counters.
-    return env.UPI_VPA ?? '';
+    return "";
   }
 
   async createIntent(input: CreateIntentInput): Promise<CreateIntentResult> {
-    if (!env.UPI_VPA) {
-      throw new AppError(ErrorCode.SERVICE_UNAVAILABLE, {
-        message: 'Online payment is not set up yet. Please choose Cash on Delivery.',
-        internalMessage: 'UPI_VPA is not configured',
-      });
-    }
-
-    // There is no provider-side order, so we mint our own reference. It is
-    // what the customer's UTR is later reconciled against.
+    /*
+     * There is no gateway-side payment order.
+     *
+     * We therefore create our own internal provider reference.
+     */
     const providerOrderId = `upi_${input.orderNumber}_${randomUUID().slice(0, 8)}`;
 
     log.info(
-      { orderNumber: input.orderNumber, amountPaise: input.amountPaise },
-      'upi intent created',
+      {
+        orderNumber: input.orderNumber,
+        amountPaise: input.amountPaise,
+      },
+      "upi intent created",
     );
 
-    return { providerOrderId, publicKey: env.UPI_VPA };
+    /*
+     * The merchant UPI ID is deliberately NOT read from env.UPI_VPA here.
+     *
+     * payment.service.ts is responsible for obtaining the configured
+     * ADIONE_UPI_ID from ConfigService and constructing the final UPI intent.
+     *
+     * Returning only the provider reference here keeps this provider
+     * independent from business configuration.
+     */
+    return {
+      providerOrderId,
+      publicKey: "",
+    };
   }
 
   /**
-   * Always reports unverified. Deliberately.
+   * Direct UPI payments cannot be automatically verified.
    *
-   * There is nothing to check against — no gateway API, no signature. The
-   * store's confirmation in the admin panel is the verification step, and
-   * returning `verified: false` here is what forces the flow through it
-   * instead of quietly trusting the client.
+   * There is no gateway API, webhook or trusted callback available here.
+   *
+   * Therefore this ALWAYS returns verified=false.
+   *
+   * The authorized admin must independently check the merchant's actual
+   * UPI/bank transaction history and use the admin "Mark Payment Received"
+   * action.
    */
   async verify(_input: VerifyInput): Promise<VerifyResult> {
     return {
       verified: false,
       amountPaise: 0,
-      status: 'PENDING',
-      method: 'upi',
-      failureReason: 'UPI payments are confirmed by the store, not automatically',
+      status: "PENDING",
+      method: "upi",
+      failureReason:
+        "UPI payments are confirmed by the store, not automatically",
     };
   }
 
+  /**
+   * Direct UPI has no trusted webhook.
+   *
+   * Any request attempting to use this provider as a webhook must therefore
+   * be rejected.
+   */
   parseWebhook(): WebhookEvent {
-    // No provider sends us webhooks. Anything arriving here is not from a UPI
-    // payment and must not be trusted.
     throw new AppError(ErrorCode.WEBHOOK_SIGNATURE_INVALID, {
-      internalMessage: 'the UPI intent provider receives no webhooks',
+      internalMessage: "the UPI intent provider receives no webhooks",
     });
   }
 
+  /**
+   * Direct UPI transfers cannot be refunded through an API.
+   *
+   * The merchant must refund the customer from the merchant UPI/bank app.
+   */
   async refund(): Promise<RefundResult> {
-    // Money went bank-to-bank into the shop's account; only the shopkeeper can
-    // send it back. Surfaced as an error so it appears in the admin panel as a
-    // task rather than silently reporting success.
     throw new AppError(ErrorCode.REFUND_FAILED, {
       message:
-        'This payment was made directly by UPI. Please refund the customer from your UPI app and mark the order refunded.',
-      internalMessage: 'automatic refunds are impossible for direct UPI transfers',
+        "This payment was made directly by UPI. Please refund the customer from your UPI app and mark the order refunded.",
+      internalMessage:
+        "automatic refunds are impossible for direct UPI transfers",
     });
   }
 
+  /**
+   * There is no provider API that can reliably determine the payment state.
+   *
+   * Always return PENDING until the admin manually confirms receipt.
+   */
   async getStatus(): Promise<VerifyResult> {
     return {
       verified: false,
       amountPaise: 0,
-      status: 'PENDING',
-      method: 'upi',
+      status: "PENDING",
+      method: "upi",
     };
   }
 }

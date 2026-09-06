@@ -126,11 +126,35 @@ export interface StoreDto {
   longitude: number;
   phone: string | null;
   timezone: string;
+  /** The owner's trading switch. False = paused from the admin panel. */
+  isActive: boolean;
+  /** False when paused, closed for the day, or outside today's window. */
   isOpenNow: boolean;
   /** Local time the store next opens, ISO-8601, when currently closed. */
   opensAt: string | null;
   closesAt: string | null;
   todayHours: StoreHoursDto | null;
+}
+
+/**
+ * The admin panel's view of trading: the switch plus the full weekly schedule.
+ *
+ * Distinct from `StoreDto` because the admin needs all seven days to edit
+ * them, and needs them even while the store is paused — the customer-facing
+ * DTO deliberately reports only today, and reports nothing when paused.
+ */
+export interface StoreAvailabilityDto {
+  isActive: boolean;
+  isOpenNow: boolean;
+  timezone: string;
+  /** Exactly seven entries, Sunday (0) through Saturday (6). */
+  hours: StoreHoursDto[];
+  /** "Opens tomorrow at 8:00 AM" — null while paused or already open. */
+  nextOpenText: string | null;
+}
+
+export interface UpdateStoreHoursRequest {
+  hours: StoreHoursDto[];
 }
 
 export interface ServiceabilityQuery {

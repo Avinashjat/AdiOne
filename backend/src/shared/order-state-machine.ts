@@ -11,13 +11,15 @@
  * `orders.status`, and it validates against `ALLOWED_TRANSITIONS` below.
  */
 
-import { ActorType, OrderStatus, TERMINAL_ORDER_STATUSES } from './enums';
+import { ActorType, OrderStatus, TERMINAL_ORDER_STATUSES } from "./enums";
 
 /* -------------------------------------------------------------------------- */
 /* Legal transitions                                                          */
 /* -------------------------------------------------------------------------- */
 
-export const ALLOWED_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
+export const ALLOWED_TRANSITIONS: Readonly<
+  Record<OrderStatus, readonly OrderStatus[]>
+> = {
   [OrderStatus.PENDING_PAYMENT]: [
     OrderStatus.PAYMENT_CONFIRMED,
     OrderStatus.PAYMENT_FAILED,
@@ -30,12 +32,18 @@ export const ALLOWED_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderSta
     OrderStatus.CANCELLED,
   ],
   [OrderStatus.STORE_ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
-  [OrderStatus.PREPARING]: [OrderStatus.READY_FOR_PICKUP, OrderStatus.CANCELLED],
+  [OrderStatus.PREPARING]: [
+    OrderStatus.READY_FOR_PICKUP,
+    OrderStatus.CANCELLED,
+  ],
   [OrderStatus.READY_FOR_PICKUP]: [
     OrderStatus.OUT_FOR_DELIVERY,
     OrderStatus.CANCELLED,
   ],
-  [OrderStatus.OUT_FOR_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELLED],
+  [OrderStatus.OUT_FOR_DELIVERY]: [
+    OrderStatus.DELIVERED,
+    OrderStatus.CANCELLED,
+  ],
   // Terminal states. REFUNDED is reachable only from a cancelled/rejected order
   // once the money is actually back with the customer.
   [OrderStatus.DELIVERED]: [],
@@ -55,23 +63,37 @@ export const ALLOWED_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderSta
 export const TRANSITION_ACTORS: Readonly<
   Partial<Record<`${OrderStatus}->${OrderStatus}`, readonly ActorType[]>>
 > = {
-  'PENDING_PAYMENT->PAYMENT_CONFIRMED': [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
-  'PENDING_PAYMENT->PAYMENT_FAILED': [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
-  'PENDING_PAYMENT->CANCELLED': [ActorType.CUSTOMER, ActorType.SYSTEM],
-  'PAYMENT_CONFIRMED->ORDER_PLACED': [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
-  'ORDER_PLACED->STORE_ACCEPTED': [ActorType.ADMIN],
-  'ORDER_PLACED->REJECTED': [ActorType.ADMIN],
-  'ORDER_PLACED->CANCELLED': [ActorType.CUSTOMER, ActorType.ADMIN],
-  'STORE_ACCEPTED->PREPARING': [ActorType.ADMIN],
-  'STORE_ACCEPTED->CANCELLED': [ActorType.CUSTOMER, ActorType.ADMIN],
-  'PREPARING->READY_FOR_PICKUP': [ActorType.ADMIN],
-  'PREPARING->CANCELLED': [ActorType.ADMIN],
-  'READY_FOR_PICKUP->OUT_FOR_DELIVERY': [ActorType.ADMIN, ActorType.DELIVERY_AGENT],
-  'READY_FOR_PICKUP->CANCELLED': [ActorType.ADMIN],
-  'OUT_FOR_DELIVERY->DELIVERED': [ActorType.ADMIN, ActorType.DELIVERY_AGENT],
-  'OUT_FOR_DELIVERY->CANCELLED': [ActorType.ADMIN],
-  'CANCELLED->REFUNDED': [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
-  'REJECTED->REFUNDED': [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
+  "PENDING_PAYMENT->PAYMENT_CONFIRMED": [
+    ActorType.SYSTEM,
+    ActorType.PAYMENT_WEBHOOK,
+    ActorType.ADMIN,
+  ],
+  "PENDING_PAYMENT->PAYMENT_FAILED": [
+    ActorType.SYSTEM,
+    ActorType.PAYMENT_WEBHOOK,
+  ],
+  "PENDING_PAYMENT->CANCELLED": [ActorType.CUSTOMER, ActorType.SYSTEM],
+  "PAYMENT_CONFIRMED->ORDER_PLACED": [
+    ActorType.SYSTEM,
+    ActorType.PAYMENT_WEBHOOK,
+    ActorType.ADMIN,
+  ],
+  "ORDER_PLACED->STORE_ACCEPTED": [ActorType.ADMIN],
+  "ORDER_PLACED->REJECTED": [ActorType.ADMIN],
+  "ORDER_PLACED->CANCELLED": [ActorType.CUSTOMER, ActorType.ADMIN],
+  "STORE_ACCEPTED->PREPARING": [ActorType.ADMIN],
+  "STORE_ACCEPTED->CANCELLED": [ActorType.CUSTOMER, ActorType.ADMIN],
+  "PREPARING->READY_FOR_PICKUP": [ActorType.ADMIN],
+  "PREPARING->CANCELLED": [ActorType.ADMIN],
+  "READY_FOR_PICKUP->OUT_FOR_DELIVERY": [
+    ActorType.ADMIN,
+    ActorType.DELIVERY_AGENT,
+  ],
+  "READY_FOR_PICKUP->CANCELLED": [ActorType.ADMIN],
+  "OUT_FOR_DELIVERY->DELIVERED": [ActorType.ADMIN, ActorType.DELIVERY_AGENT],
+  "OUT_FOR_DELIVERY->CANCELLED": [ActorType.ADMIN],
+  "CANCELLED->REFUNDED": [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
+  "REJECTED->REFUNDED": [ActorType.SYSTEM, ActorType.PAYMENT_WEBHOOK],
 };
 
 export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
@@ -119,11 +141,11 @@ export const STATUS_PROGRESSION: readonly OrderStatus[] = [
  * without ever making a client switch on a raw status string.
  */
 export const CustomerTimelineStep = {
-  PLACED: 'PLACED',
-  CONFIRMED: 'CONFIRMED',
-  PACKED: 'PACKED',
-  OUT_FOR_DELIVERY: 'OUT_FOR_DELIVERY',
-  DELIVERED: 'DELIVERED',
+  PLACED: "PLACED",
+  CONFIRMED: "CONFIRMED",
+  PACKED: "PACKED",
+  OUT_FOR_DELIVERY: "OUT_FOR_DELIVERY",
+  DELIVERED: "DELIVERED",
 } as const;
 export type CustomerTimelineStep =
   (typeof CustomerTimelineStep)[keyof typeof CustomerTimelineStep];
@@ -136,12 +158,14 @@ export const CUSTOMER_TIMELINE_STEPS: readonly CustomerTimelineStep[] = [
   CustomerTimelineStep.DELIVERED,
 ];
 
-export const CUSTOMER_TIMELINE_LABELS: Readonly<Record<CustomerTimelineStep, string>> = {
-  [CustomerTimelineStep.PLACED]: 'Order Placed',
-  [CustomerTimelineStep.CONFIRMED]: 'Order Confirmed',
-  [CustomerTimelineStep.PACKED]: 'Order Packed',
-  [CustomerTimelineStep.OUT_FOR_DELIVERY]: 'Out for Delivery',
-  [CustomerTimelineStep.DELIVERED]: 'Delivered',
+export const CUSTOMER_TIMELINE_LABELS: Readonly<
+  Record<CustomerTimelineStep, string>
+> = {
+  [CustomerTimelineStep.PLACED]: "Order Placed",
+  [CustomerTimelineStep.CONFIRMED]: "Order Confirmed",
+  [CustomerTimelineStep.PACKED]: "Order Packed",
+  [CustomerTimelineStep.OUT_FOR_DELIVERY]: "Out for Delivery",
+  [CustomerTimelineStep.DELIVERED]: "Delivered",
 };
 
 /**
@@ -182,18 +206,18 @@ export function toCustomerTimelineStep(
 
 /** Short, user-safe label for any internal status (badges, lists). */
 export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
-  [OrderStatus.PENDING_PAYMENT]: 'Awaiting Payment',
-  [OrderStatus.PAYMENT_CONFIRMED]: 'Payment Received',
-  [OrderStatus.ORDER_PLACED]: 'Order Placed',
-  [OrderStatus.STORE_ACCEPTED]: 'Confirmed',
-  [OrderStatus.PREPARING]: 'Preparing',
-  [OrderStatus.READY_FOR_PICKUP]: 'Packed',
-  [OrderStatus.OUT_FOR_DELIVERY]: 'Out for Delivery',
-  [OrderStatus.DELIVERED]: 'Delivered',
-  [OrderStatus.CANCELLED]: 'Cancelled',
-  [OrderStatus.PAYMENT_FAILED]: 'Payment Failed',
-  [OrderStatus.REJECTED]: 'Rejected',
-  [OrderStatus.REFUNDED]: 'Refunded',
+  [OrderStatus.PENDING_PAYMENT]: "Awaiting Payment",
+  [OrderStatus.PAYMENT_CONFIRMED]: "Payment Received",
+  [OrderStatus.ORDER_PLACED]: "Order Placed",
+  [OrderStatus.STORE_ACCEPTED]: "Confirmed",
+  [OrderStatus.PREPARING]: "Preparing",
+  [OrderStatus.READY_FOR_PICKUP]: "Packed",
+  [OrderStatus.OUT_FOR_DELIVERY]: "Out for Delivery",
+  [OrderStatus.DELIVERED]: "Delivered",
+  [OrderStatus.CANCELLED]: "Cancelled",
+  [OrderStatus.PAYMENT_FAILED]: "Payment Failed",
+  [OrderStatus.REJECTED]: "Rejected",
+  [OrderStatus.REFUNDED]: "Refunded",
 };
 
 /**
@@ -201,9 +225,9 @@ export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
  * (Delivered / Cancelled / Ongoing).
  */
 export const OrderBucket = {
-  ONGOING: 'ONGOING',
-  DELIVERED: 'DELIVERED',
-  CANCELLED: 'CANCELLED',
+  ONGOING: "ONGOING",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
 } as const;
 export type OrderBucket = (typeof OrderBucket)[keyof typeof OrderBucket];
 
@@ -232,18 +256,20 @@ export const AdminOrderTab = {
    * anything — without this tab those orders would be invisible until they
    * expired.
    */
-  PAYMENT_PENDING: 'PAYMENT_PENDING',
-  NEW: 'NEW',
-  ACCEPTED: 'ACCEPTED',
-  PREPARING: 'PREPARING',
-  READY: 'READY',
-  OUT_FOR_DELIVERY: 'OUT_FOR_DELIVERY',
-  COMPLETED: 'COMPLETED',
-  CANCELLED: 'CANCELLED',
+  PAYMENT_PENDING: "PAYMENT_PENDING",
+  NEW: "NEW",
+  ACCEPTED: "ACCEPTED",
+  PREPARING: "PREPARING",
+  READY: "READY",
+  OUT_FOR_DELIVERY: "OUT_FOR_DELIVERY",
+  COMPLETED: "COMPLETED",
+  CANCELLED: "CANCELLED",
 } as const;
 export type AdminOrderTab = (typeof AdminOrderTab)[keyof typeof AdminOrderTab];
 
-export const ADMIN_TAB_STATUSES: Readonly<Record<AdminOrderTab, readonly OrderStatus[]>> = {
+export const ADMIN_TAB_STATUSES: Readonly<
+  Record<AdminOrderTab, readonly OrderStatus[]>
+> = {
   [AdminOrderTab.PAYMENT_PENDING]: [OrderStatus.PENDING_PAYMENT],
   [AdminOrderTab.NEW]: [OrderStatus.ORDER_PLACED],
   [AdminOrderTab.ACCEPTED]: [OrderStatus.STORE_ACCEPTED],

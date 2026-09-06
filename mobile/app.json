@@ -51,7 +51,6 @@
         }
       ],
       "expo-secure-store",
-      "./plugins/withUpiQueries",
       "./plugins/withGradleNetworkTimeout",
       "expo-font",
       "expo-router"

@@ -30,6 +30,7 @@ export const ConfigKey = {
   STORE_TIMEZONE: "STORE_TIMEZONE",
   ALLOW_ORDERS_WHEN_CLOSED: "ALLOW_ORDERS_WHEN_CLOSED",
   STORE_GSTIN: "STORE_GSTIN",
+  ADIONE_UPI_ID: "ADIONE_UPI_ID",
 
   /* pricing */
   MIN_ORDER_VALUE_PAISE: "MIN_ORDER_VALUE_PAISE",
@@ -74,6 +75,7 @@ export const ConfigKey = {
   SUPPORT_EMAIL: "SUPPORT_EMAIL",
   DELIVERY_PROMISE_TEXT: "DELIVERY_PROMISE_TEXT",
 } as const;
+
 export type ConfigKey = (typeof ConfigKey)[keyof typeof ConfigKey];
 
 /** A delivery-fee band. The first slab whose `maxKm` covers the distance wins. */
@@ -89,6 +91,7 @@ export interface ConfigValues {
   STORE_TIMEZONE: string;
   ALLOW_ORDERS_WHEN_CLOSED: boolean;
   STORE_GSTIN: string;
+  ADIONE_UPI_ID: string;
 
   MIN_ORDER_VALUE_PAISE: number;
   DELIVERY_FEE_SLABS: DeliveryFeeSlab[];
@@ -132,25 +135,25 @@ export interface ConfigValues {
  * seeded.
  */
 export const CONFIG_DEFAULTS: ConfigValues = {
-  MAX_SERVICE_RADIUS_KM: 15,
+  MAX_SERVICE_RADIUS_KM: 10,
 
   ROAD_DISTANCE_FACTOR: 1.3,
 
   STORE_TIMEZONE: "Asia/Kolkata",
   ALLOW_ORDERS_WHEN_CLOSED: false,
   STORE_GSTIN: "",
+  ADIONE_UPI_ID: "",
 
-  MIN_ORDER_VALUE_PAISE: 20000,
+  MIN_ORDER_VALUE_PAISE: 9900,
 
   DELIVERY_FEE_SLABS: [
-    { maxKm: 3, feePaise: 5000 },
-    { maxKm: 7, feePaise: 5000 },
-    { maxKm: 15, feePaise: 5000 },
+    { maxKm: 3, feePaise: 2000 },
+    { maxKm: 6, feePaise: 3000 },
+    { maxKm: 10, feePaise: 4000 },
   ],
 
-  FREE_DELIVERY_THRESHOLD_PAISE: 20000,
-
-  PLATFORM_FEE_PAISE: 0,
+  FREE_DELIVERY_THRESHOLD_PAISE: 29900,
+  PLATFORM_FEE_PAISE: 500,
 
   DEFAULT_COD_POLICY: CodPolicy.ALLOW,
   COD_MAX_ORDER_VALUE_PAISE: 300000,
@@ -180,7 +183,6 @@ export const CONFIG_DEFAULTS: ConfigValues = {
   SUPPORT_PHONE: "",
   SUPPORT_WHATSAPP: "",
   SUPPORT_EMAIL: "support@adione.in",
-
   DELIVERY_PROMISE_TEXT: "in 30 minutes",
 };
 
@@ -215,52 +217,86 @@ export type PublicConfig = Pick<
 export const CONFIG_DESCRIPTIONS: Readonly<Record<ConfigKey, string>> = {
   MAX_SERVICE_RADIUS_KM:
     "Maximum straight-line delivery distance from the store, in km.",
+
   ROAD_DISTANCE_FACTOR:
     "Multiplier converting straight-line distance to road distance, used for ETA and delivery fee (typically 1.2–1.4).",
+
   STORE_TIMEZONE: "Timezone used to evaluate store opening hours.",
+
   ALLOW_ORDERS_WHEN_CLOSED:
     "Allow customers to place orders outside opening hours.",
+
   STORE_GSTIN:
     "GST registration number. When set, order receipts show a tax invoice breakdown.",
+
+  ADIONE_UPI_ID:
+    "Merchant UPI ID used for direct UPI payments, for example merchant@upi.",
+
   MIN_ORDER_VALUE_PAISE: "Minimum order value before delivery fees, in paise.",
+
   DELIVERY_FEE_SLABS: "Delivery fee bands by road distance, in paise.",
+
   FREE_DELIVERY_THRESHOLD_PAISE:
     "Order value above which delivery is free, in paise.",
+
   PLATFORM_FEE_PAISE:
     "Flat platform fee added to every order, in paise. Set 0 to hide the line.",
+
   DEFAULT_COD_POLICY:
     "COD policy used when no product, category or store rule applies.",
+
   COD_MAX_ORDER_VALUE_PAISE:
     "Maximum order value eligible for Cash on Delivery, in paise.",
+
   COD_FIRST_ORDER_MAX_PAISE:
     "Maximum COD value for a customer's first order, in paise.",
+
   BASE_PREPARATION_MINUTES:
     "Fixed picking and packing time per order, in minutes.",
+
   PER_ITEM_PICK_SECONDS: "Additional picking time per item, in seconds.",
+
   AVG_DELIVERY_SPEED_KMPH: "Average rider speed used for ETA, in km/h.",
+
   ORDERS_PER_RIDER_BATCH:
     "Active orders a rider handles before ETA is extended.",
+
   BATCH_DELAY_MINUTES:
     "Minutes added to ETA per additional batch of active orders.",
+
   ETA_BUFFER_MINUTES: "Safety buffer added to every ETA, in minutes.",
+
   PAYMENT_HOLD_MINUTES:
     "How long stock stays reserved for an unpaid online order before it is released.",
+
   CANCELLATION_ALLOWED_UNTIL:
     "Last order status at which a customer may still cancel by themselves.",
+
   DEFAULT_MAX_QTY_PER_ORDER: "Default maximum quantity of one item per order.",
+
   MAX_ADDRESSES_PER_USER: "Maximum saved addresses per customer.",
+
   LOW_STOCK_THRESHOLD:
     "Stock level at or below which an item appears in the low-stock report.",
+
   DELIVERY_OTP_REQUIRED_FOR_COD:
     "Require a delivery OTP before marking COD orders delivered.",
+
   FEATURE_REFERRAL_ENABLED:
     "Show the Refer & Earn rewards programme in the app.",
+
   FEATURE_COUPONS_ENABLED: "Allow coupon codes at checkout.",
+
   FEATURE_RATINGS_ENABLED: "Show product ratings and reviews.",
+
   FEATURE_WISHLIST_ENABLED: "Show the wishlist / favourites feature.",
+
   SUPPORT_PHONE: "Phone number shown on Help & Support.",
+
   SUPPORT_WHATSAPP: "WhatsApp number shown on Help & Support.",
+
   SUPPORT_EMAIL: "Support email address.",
+
   DELIVERY_PROMISE_TEXT:
     'Marketing copy for delivery speed (e.g. "in 30 minutes"). Per-order ETA is always computed separately.',
 };

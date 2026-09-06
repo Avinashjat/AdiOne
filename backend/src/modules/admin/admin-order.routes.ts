@@ -1,23 +1,29 @@
 /** Admin order board, delivery management and configuration endpoints. */
 
-import { Router, type Request, type Response } from 'express';
-import { z } from 'zod';
+import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import {
   AdminOrderTab,
   ConfigKey,
   OrderStatus,
   PAGINATION_MAX_LIMIT,
   Permission,
-} from '../../shared';
-import { asyncHandler, created, noContent, ok, okCursorPage } from '../../common/response';
-import { validate, validatedQuery } from '../../middleware/validate';
-import { requirePermission, requireUser } from '../../middleware/auth';
-import { normalizeIndianMobile } from '../../shared/phone';
-import * as storeService from '../stores/store.service';
-import * as configService from '../configuration/configuration.service';
-import * as deliveryService from '../delivery/delivery.service';
-import * as paymentService from '../payments/payment.service';
-import * as service from './admin-order.service';
+} from "../../shared";
+import {
+  asyncHandler,
+  created,
+  noContent,
+  ok,
+  okCursorPage,
+} from "../../common/response";
+import { validate, validatedQuery } from "../../middleware/validate";
+import { requirePermission, requireUser } from "../../middleware/auth";
+import { normalizeIndianMobile } from "../../shared/phone";
+import * as storeService from "../stores/store.service";
+import * as configService from "../configuration/configuration.service";
+import * as deliveryService from "../delivery/delivery.service";
+import * as paymentService from "../payments/payment.service";
+import * as service from "./admin-order.service";
 
 const uuid = z.string().uuid();
 const idParams = z.object({ id: uuid });
@@ -27,7 +33,7 @@ export const adminOrderRouter: Router = Router();
 /* dashboard ---------------------------------------------------------------- */
 
 adminOrderRouter.get(
-  '/dashboard',
+  "/dashboard",
   requirePermission(Permission.DASHBOARD_READ),
   asyncHandler(async (_req: Request, res: Response) => {
     ok(res, await service.getDashboard());
@@ -37,14 +43,19 @@ adminOrderRouter.get(
 /* orders ------------------------------------------------------------------- */
 
 adminOrderRouter.get(
-  '/orders',
+  "/orders",
   requirePermission(Permission.ORDER_READ_ALL),
   validate({
     query: z.object({
       tab: z.nativeEnum(AdminOrderTab).optional(),
       search: z.string().trim().max(60).optional(),
       cursor: z.string().datetime().optional(),
-      limit: z.coerce.number().int().positive().max(PAGINATION_MAX_LIMIT).default(25),
+      limit: z.coerce
+        .number()
+        .int()
+        .positive()
+        .max(PAGINATION_MAX_LIMIT)
+        .default(25),
     }),
   }),
   asyncHandler(async (req: Request, res: Response) => {
@@ -67,23 +78,27 @@ adminOrderRouter.get(
 );
 
 adminOrderRouter.get(
-  '/orders/:id',
+  "/orders/:id",
   requirePermission(Permission.ORDER_READ_ALL),
   validate({ params: idParams }),
   asyncHandler(async (req: Request, res: Response) => {
-    ok(res, await service.getOrderForAdmin(req.params['id'] as string));
+    ok(res, await service.getOrderForAdmin(req.params["id"] as string));
   }),
 );
 
 adminOrderRouter.patch(
-  '/orders/:id/status',
+  "/orders/:id/status",
   requirePermission(Permission.ORDER_UPDATE_STATUS),
   validate({
     params: idParams,
     body: z.object({
       toStatus: z.nativeEnum(OrderStatus),
       reason: z.string().trim().max(300).optional(),
-      deliveryOtp: z.string().trim().regex(/^\d{4}$/).optional(),
+      deliveryOtp: z
+        .string()
+        .trim()
+        .regex(/^\d{4}$/)
+        .optional(),
       cashCollectedPaise: z.number().int().min(0).optional(),
     }),
   }),
@@ -95,11 +110,10 @@ adminOrderRouter.patch(
       cashCollectedPaise?: number;
     };
     await service.updateOrderStatus({
-      orderId: req.params['id'] as string,
+      orderId: req.params["id"] as string,
       toStatus: body.toStatus,
       actorUserId: requireUser(req).id,
       reason: body.reason ?? null,
-      deliveryOtp: body.deliveryOtp ?? null,
       cashCollectedPaise: body.cashCollectedPaise ?? null,
     });
     noContent(res);
@@ -107,7 +121,7 @@ adminOrderRouter.patch(
 );
 
 adminOrderRouter.post(
-  '/orders/:id/assign',
+  "/orders/:id/assign",
   requirePermission(Permission.DELIVERY_ASSIGN),
   validate({ params: idParams, body: z.object({ agentId: uuid }) }),
   asyncHandler(async (req: Request, res: Response) => {
@@ -115,7 +129,7 @@ adminOrderRouter.post(
     ok(
       res,
       await deliveryService.assignOrder(
-        req.params['id'] as string,
+        req.params["id"] as string,
         agentId,
         requireUser(req).id,
       ),
@@ -131,33 +145,42 @@ adminOrderRouter.post(
  * can reach it.
  */
 adminOrderRouter.post(
-  '/orders/:id/confirm-payment',
+  "/orders/:id/confirm-payment",
   requirePermission(Permission.ORDER_UPDATE_STATUS),
   validate({
     params: idParams,
-    body: z.object({ reference: z.string().trim().max(60).nullable().optional() }),
+    body: z.object({
+      reference: z.string().trim().max(32).nullable().optional(),
+    }),
   }),
   asyncHandler(async (req: Request, res: Response) => {
-    const { reference } = req.body as { reference?: string | null };
+    const { reference } = req.body as {
+      reference?: string | null;
+    };
+
     await paymentService.confirmPaymentManually(
-      req.params['id'] as string,
+      req.params["id"] as string,
       requireUser(req).id,
       reference ?? null,
     );
+
     noContent(res);
   }),
 );
 
 adminOrderRouter.post(
-  '/orders/:id/refund',
+  "/orders/:id/refund",
   requirePermission(Permission.ORDER_REFUND),
-  validate({ params: idParams, body: z.object({ reason: z.string().trim().min(2).max(300) }) }),
+  validate({
+    params: idParams,
+    body: z.object({ reason: z.string().trim().min(2).max(300) }),
+  }),
   asyncHandler(async (req: Request, res: Response) => {
     const { reason } = req.body as { reason: string };
     ok(
       res,
       await paymentService.refundOrder(
-        req.params['id'] as string,
+        req.params["id"] as string,
         reason,
         requireUser(req).id,
       ),
@@ -175,7 +198,10 @@ const agentBody = z.object({
     .transform((value, ctx) => {
       const normalized = normalizeIndianMobile(value);
       if (!normalized) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid mobile number' });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Enter a valid mobile number",
+        });
         return z.NEVER;
       }
       return normalized;
@@ -184,7 +210,7 @@ const agentBody = z.object({
 });
 
 adminOrderRouter.get(
-  '/delivery-agents',
+  "/delivery-agents",
   requirePermission(Permission.DELIVERY_AGENT_READ),
   asyncHandler(async (_req: Request, res: Response) => {
     const store = await storeService.getActiveStore();
@@ -193,7 +219,7 @@ adminOrderRouter.get(
 );
 
 adminOrderRouter.post(
-  '/delivery-agents',
+  "/delivery-agents",
   requirePermission(Permission.DELIVERY_AGENT_WRITE),
   validate({ body: agentBody }),
   asyncHandler(async (req: Request, res: Response) => {
@@ -202,8 +228,41 @@ adminOrderRouter.post(
   }),
 );
 
+/**
+ * POST /admin/orders/:id/reject-payment
+ *
+ * Admin explicitly determines that a UPI payment was not received.
+ *
+ * This is different from "Keep Pending":
+ * - Keep Pending performs no state change.
+ * - Reject Payment deliberately moves the order to PAYMENT_FAILED.
+ */
+adminOrderRouter.post(
+  "/orders/:id/reject-payment",
+  requirePermission(Permission.ORDER_UPDATE_STATUS),
+  validate({
+    params: idParams,
+    body: z.object({
+      reason: z.string().trim().min(2).max(300),
+    }),
+  }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { reason } = req.body as {
+      reason: string;
+    };
+
+    await paymentService.rejectManualUpiPayment(
+      req.params["id"] as string,
+      requireUser(req).id,
+      reason,
+    );
+
+    noContent(res);
+  }),
+);
+
 adminOrderRouter.patch(
-  '/delivery-agents/:id',
+  "/delivery-agents/:id",
   requirePermission(Permission.DELIVERY_AGENT_WRITE),
   validate({
     params: idParams,
@@ -213,28 +272,30 @@ adminOrderRouter.patch(
     }),
   }),
   asyncHandler(async (req: Request, res: Response) => {
-    await deliveryService.updateAgent(req.params['id'] as string, req.body);
+    await deliveryService.updateAgent(req.params["id"] as string, req.body);
     noContent(res);
   }),
 );
 
 adminOrderRouter.delete(
-  '/delivery-agents/:id',
+  "/delivery-agents/:id",
   requirePermission(Permission.DELIVERY_AGENT_WRITE),
   validate({ params: idParams }),
   asyncHandler(async (req: Request, res: Response) => {
-    await deliveryService.deleteAgent(req.params['id'] as string);
+    await deliveryService.deleteAgent(req.params["id"] as string);
     noContent(res);
   }),
 );
 
 adminOrderRouter.get(
-  '/delivery/cash-summary',
+  "/delivery/cash-summary",
   requirePermission(Permission.DELIVERY_AGENT_READ),
   asyncHandler(async (req: Request, res: Response) => {
     const store = await storeService.getActiveStore();
-    const from = req.query['from'] ? new Date(String(req.query['from'])) : new Date(Date.now() - 86_400_000);
-    const to = req.query['to'] ? new Date(String(req.query['to'])) : new Date();
+    const from = req.query["from"]
+      ? new Date(String(req.query["from"]))
+      : new Date(Date.now() - 86_400_000);
+    const to = req.query["to"] ? new Date(String(req.query["to"])) : new Date();
     ok(res, await deliveryService.cashSummary(store.id, from, to));
   }),
 );
@@ -242,7 +303,7 @@ adminOrderRouter.get(
 /* configuration (Task 13.6) ------------------------------------------------ */
 
 adminOrderRouter.get(
-  '/config',
+  "/config",
   requirePermission(Permission.CONFIG_READ),
   asyncHandler(async (_req: Request, res: Response) => {
     ok(res, await configService.listForAdmin());
@@ -250,7 +311,7 @@ adminOrderRouter.get(
 );
 
 adminOrderRouter.patch(
-  '/config',
+  "/config",
   requirePermission(Permission.CONFIG_WRITE),
   validate({
     body: z.object({
@@ -262,6 +323,12 @@ adminOrderRouter.patch(
     const { key, value } = req.body as { key: ConfigKey; value: never };
     // The service validates the VALUE per key — a malformed fee slab or a
     // negative radius would otherwise silently corrupt every price.
-    ok(res, { value: await configService.set({ key, value, actorUserId: requireUser(req).id }) });
+    ok(res, {
+      value: await configService.set({
+        key,
+        value,
+        actorUserId: requireUser(req).id,
+      }),
+    });
   }),
 );
