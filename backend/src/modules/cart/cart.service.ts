@@ -351,6 +351,7 @@ export async function addItem(
   userId: string,
   variantId: string,
   qty: number,
+  distanceKm: number | null = null,
 ): Promise<CartDto> {
   const store = await storeService.getActiveStore();
 
@@ -401,13 +402,14 @@ export async function addItem(
     update: { qty: desiredQty },
   });
 
-  return (await getCart(userId)).dto;
+  return (await getCart(userId, { distanceKm })).dto;
 }
 
 export async function updateItemQty(
   userId: string,
   cartItemId: string,
   qty: number,
+  distanceKm: number | null = null,
 ): Promise<CartDto> {
   const store = await storeService.getActiveStore();
 
@@ -430,7 +432,7 @@ export async function updateItemQty(
 
   if (qty <= 0) {
     await prisma.cartItem.delete({ where: { id: cartItemId } });
-    return (await getCart(userId)).dto;
+    return (await getCart(userId, { distanceKm })).dto;
   }
 
   const offer = item.variant.storeVariants[0];
@@ -449,12 +451,13 @@ export async function updateItemQty(
   }
 
   await prisma.cartItem.update({ where: { id: cartItemId }, data: { qty } });
-  return (await getCart(userId)).dto;
+  return (await getCart(userId, { distanceKm })).dto;
 }
 
 export async function removeItem(
   userId: string,
   cartItemId: string,
+  distanceKm: number | null = null,
 ): Promise<CartDto> {
   const store = await storeService.getActiveStore();
   const deleted = await prisma.cartItem.deleteMany({
@@ -468,10 +471,13 @@ export async function removeItem(
       message: "Cart item not found.",
     });
   }
-  return (await getCart(userId)).dto;
+  return (await getCart(userId, { distanceKm })).dto;
 }
 
-export async function clearCart(userId: string): Promise<CartDto> {
+export async function clearCart(
+  userId: string,
+  distanceKm: number | null = null,
+): Promise<CartDto> {
   const store = await storeService.getActiveStore();
   const cart = await prisma.cart.findFirst({
     where: { userId, storeId: store.id, status: "ACTIVE" },
@@ -483,12 +489,13 @@ export async function clearCart(userId: string): Promise<CartDto> {
       data: { couponCode: null },
     });
   }
-  return (await getCart(userId)).dto;
+  return (await getCart(userId, { distanceKm })).dto;
 }
 
 export async function applyCoupon(
   userId: string,
   code: string,
+  distanceKm: number | null = null,
 ): Promise<CartDto> {
   // Validate before storing, so an invalid code is rejected immediately rather
   // than silently dropped at the next cart read.
@@ -501,10 +508,13 @@ export async function applyCoupon(
     data: { couponCode: coupon.code },
   });
 
-  return (await getCart(userId)).dto;
+  return (await getCart(userId, { distanceKm })).dto;
 }
 
-export async function removeCoupon(userId: string): Promise<CartDto> {
+export async function removeCoupon(
+  userId: string,
+  distanceKm: number | null = null,
+): Promise<CartDto> {
   const store = await storeService.getActiveStore();
   const cart = await prisma.cart.findFirst({
     where: { userId, storeId: store.id, status: "ACTIVE" },
@@ -514,7 +524,7 @@ export async function removeCoupon(userId: string): Promise<CartDto> {
       where: { id: cart.id },
       data: { couponCode: null },
     });
-  return (await getCart(userId)).dto;
+  return (await getCart(userId, { distanceKm })).dto;
 }
 
 /** Marks the cart converted once its order is created. */

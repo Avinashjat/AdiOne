@@ -17,12 +17,16 @@ import {
   ErrorCode,
   type BillDto,
   type ConfigValues,
-} from '../../shared';
-import { extractInclusiveTaxPaise, percentOfPaise } from '../../shared/money';
-import { resolveDeliveryFeePaise, toRoadDistanceKm } from '../../shared/distance';
-import { AppError } from '../../common/errors';
-import { prisma } from '../../infra/db/prisma';
-import * as configService from '../configuration/configuration.service';
+} from "../../shared";
+import { extractInclusiveTaxPaise, percentOfPaise } from "../../shared/money";
+import {
+  resolveDeliveryFeePaise,
+  toRoadDistanceKm,
+} from "../../shared/distance";
+import { AppError } from "../../common/errors";
+import { prisma } from "../../infra/db/prisma";
+import * as configService from "../configuration/configuration.service";
+import { config } from "dotenv";
 
 export interface PriceableItem {
   variantId: string;
@@ -56,11 +60,11 @@ export interface PricingResult {
 
 type PricingConfig = Pick<
   ConfigValues,
-  | 'DELIVERY_FEE_SLABS'
-  | 'FREE_DELIVERY_THRESHOLD_PAISE'
-  | 'PLATFORM_FEE_PAISE'
-  | 'MIN_ORDER_VALUE_PAISE'
-  | 'ROAD_DISTANCE_FACTOR'
+  | "DELIVERY_FEE_SLABS"
+  | "FREE_DELIVERY_THRESHOLD_PAISE"
+  | "PLATFORM_FEE_PAISE"
+  | "MIN_ORDER_VALUE_PAISE"
+  | "ROAD_DISTANCE_FACTOR"
 >;
 
 async function loadConfig(): Promise<PricingConfig> {
@@ -85,7 +89,10 @@ export async function computeBill(input: PricingInput): Promise<PricingResult> {
   for (const item of input.items) {
     const lineTotal = item.unitPricePaise * item.qty;
     itemsSubtotalPaise += lineTotal;
-    itemDiscountPaise += Math.max(0, (item.mrpPaise - item.unitPricePaise) * item.qty);
+    itemDiscountPaise += Math.max(
+      0,
+      (item.mrpPaise - item.unitPricePaise) * item.qty,
+    );
     // Tax is EXTRACTED from the inclusive price, never added on top —
     // adding it would double-charge (PRD §2.1 C10).
     taxPaise += extractInclusiveTaxPaise(lineTotal, item.taxRateBp);
@@ -105,7 +112,10 @@ export async function computeBill(input: PricingInput): Promise<PricingResult> {
 
     switch (input.coupon.type) {
       case CouponType.PERCENT: {
-        const raw = percentOfPaise(itemsSubtotalPaise, input.coupon.discountValue);
+        const raw = percentOfPaise(
+          itemsSubtotalPaise,
+          input.coupon.discountValue,
+        );
         couponDiscountPaise = input.coupon.maxDiscountPaise
           ? Math.min(raw, input.coupon.maxDiscountPaise)
           : raw;
@@ -113,7 +123,10 @@ export async function computeBill(input: PricingInput): Promise<PricingResult> {
       }
       case CouponType.FLAT:
         // Never discount below zero — a ₹50 coupon on a ₹40 order is ₹40 off.
-        couponDiscountPaise = Math.min(input.coupon.discountValue, itemsSubtotalPaise);
+        couponDiscountPaise = Math.min(
+          input.coupon.discountValue,
+          itemsSubtotalPaise,
+        );
         break;
       case CouponType.FREE_DELIVERY:
         couponWaivesDelivery = true;
@@ -127,12 +140,18 @@ export async function computeBill(input: PricingInput): Promise<PricingResult> {
   let freeDeliveryReason: string | null = null;
 
   if (input.distanceKm !== null) {
-    const roadKm = toRoadDistanceKm(input.distanceKm, config.ROAD_DISTANCE_FACTOR);
-    deliveryFeePaise = resolveDeliveryFeePaise(roadKm, config.DELIVERY_FEE_SLABS);
+    const roadKm = toRoadDistanceKm(
+      input.distanceKm,
+      config.ROAD_DISTANCE_FACTOR,
+    );
+    deliveryFeePaise = resolveDeliveryFeePaise(
+      roadKm,
+      config.DELIVERY_FEE_SLABS,
+    );
 
     if (couponWaivesDelivery) {
       deliveryFeePaise = 0;
-      freeDeliveryReason = 'Free delivery applied with your coupon';
+      freeDeliveryReason = "Free delivery applied with your coupon";
     } else if (netItemsPaise >= config.FREE_DELIVERY_THRESHOLD_PAISE) {
       deliveryFeePaise = 0;
       freeDeliveryReason = `Free delivery on orders above ₹${Math.floor(
@@ -165,7 +184,9 @@ export async function computeBill(input: PricingInput): Promise<PricingResult> {
 }
 
 /** Shortfall to the configured minimum order, in paise. Zero when met. */
-export async function minimumOrderShortfall(itemsSubtotalPaise: number): Promise<number> {
+export async function minimumOrderShortfall(
+  itemsSubtotalPaise: number,
+): Promise<number> {
   const minimum = await configService.get(ConfigKey.MIN_ORDER_VALUE_PAISE);
   return Math.max(0, minimum - itemsSubtotalPaise);
 }
@@ -188,11 +209,13 @@ export async function resolveCoupon(
   const enabled = await configService.get(ConfigKey.FEATURE_COUPONS_ENABLED);
   if (!enabled) {
     throw new AppError(ErrorCode.COUPON_INVALID, {
-      message: 'Coupons are not available right now.',
+      message: "Coupons are not available right now.",
     });
   }
 
-  const coupon = await prisma.coupon.findUnique({ where: { code: code.trim().toUpperCase() } });
+  const coupon = await prisma.coupon.findUnique({
+    where: { code: code.trim().toUpperCase() },
+  });
 
   if (!coupon || !coupon.isActive) {
     throw new AppError(ErrorCode.COUPON_INVALID);
@@ -203,7 +226,10 @@ export async function resolveCoupon(
     throw new AppError(ErrorCode.COUPON_EXPIRED);
   }
 
-  if (coupon.usageLimitTotal !== null && coupon.usedCount >= coupon.usageLimitTotal) {
+  if (
+    coupon.usageLimitTotal !== null &&
+    coupon.usedCount >= coupon.usageLimitTotal
+  ) {
     throw new AppError(ErrorCode.COUPON_LIMIT_REACHED);
   }
 
@@ -212,7 +238,7 @@ export async function resolveCoupon(
   });
   if (usedByUser >= coupon.usageLimitPerUser) {
     throw new AppError(ErrorCode.COUPON_LIMIT_REACHED, {
-      message: 'You have already used this coupon.',
+      message: "You have already used this coupon.",
     });
   }
 

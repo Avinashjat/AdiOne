@@ -7,18 +7,20 @@
  * keeps pagination correct without hand-writing every join.
  */
 
-import { Prisma, type Category } from '@prisma/client';
-import { ProductStatus } from '../../shared';
-import { prisma, type DbClient } from '../../infra/db/prisma';
+import { Prisma, type Category } from "@prisma/client";
+import { ProductStatus } from "../../shared";
+import { prisma, type DbClient } from "../../infra/db/prisma";
 
 /* -------------------------------------------------------------------------- */
 /* Categories                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export async function findAllCategories(client: DbClient = prisma): Promise<Category[]> {
+export async function findAllCategories(
+  client: DbClient = prisma,
+): Promise<Category[]> {
   return client.category.findMany({
     where: { isActive: true, deletedAt: null },
-    orderBy: [{ depth: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
+    orderBy: [{ depth: "asc" }, { displayOrder: "asc" }, { name: "asc" }],
   });
 }
 
@@ -62,10 +64,10 @@ export const PRODUCT_INCLUDE = (storeId: string) =>
   ({
     brand: true,
     category: true,
-    images: { orderBy: { displayOrder: 'asc' } },
+    images: { orderBy: { displayOrder: "asc" } },
     variants: {
       where: { status: ProductStatus.ACTIVE, deletedAt: null },
-      orderBy: [{ isDefault: 'desc' }, { displayOrder: 'asc' }],
+      orderBy: [{ isDefault: "desc" }, { displayOrder: "asc" }],
       include: { storeVariants: { where: { storeId } } },
     },
   }) satisfies Prisma.ProductInclude;
@@ -88,7 +90,9 @@ export async function hydrateProducts(
 
   // Preserve the ordering the SQL query decided (relevance, popularity, price).
   const order = new Map(productIds.map((id, index) => [id, index]));
-  return products.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return products.sort(
+    (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+  );
 }
 
 export async function findProductById(
@@ -103,12 +107,12 @@ export async function findProductById(
 }
 
 export type ProductSort =
-  | 'RELEVANCE'
-  | 'PRICE_ASC'
-  | 'PRICE_DESC'
-  | 'NEWEST'
-  | 'POPULAR'
-  | 'DISCOUNT';
+  | "RELEVANCE"
+  | "PRICE_ASC"
+  | "PRICE_DESC"
+  | "NEWEST"
+  | "POPULAR"
+  | "DISCOUNT";
 
 export interface ListProductIdsInput {
   storeId: string;
@@ -163,7 +167,7 @@ export async function listProductIds(
     DISCOUNT: Prisma.sql`MAX(sv.mrp_paise - sv.price_paise)`,
   }[input.sort];
 
-  const ascending = input.sort === 'PRICE_ASC';
+  const ascending = input.sort === "PRICE_ASC";
   const direction = ascending ? Prisma.sql`ASC` : Prisma.sql`DESC`;
 
   const cursorFilter = input.cursor
@@ -194,45 +198,121 @@ export async function listProductIds(
 }
 
 /** Curated Home rails (PRD §9.4 `GET /home`). */
+/** Curated Home rails (PRD §9.4 `GET /home`). */
+
+/** Curated Home rails (PRD §9.4 `GET /home`). */
 export async function listRailProductIds(
   storeId: string,
-  rail: 'POPULAR' | 'DAILY_ESSENTIALS' | 'BEST_SELLERS' | 'RECENTLY_ADDED' | 'OFFERS',
+  rail:
+    | "POPULAR"
+    | "DAILY_ESSENTIALS"
+    | "BEST_SELLERS"
+    | "RECENTLY_ADDED"
+    | "OFFERS",
   limit: number,
   client: DbClient = prisma,
 ): Promise<string[]> {
-  // A product has many variants, so the join fans out and the rows must be
-  // collapsed. GROUP BY (rather than DISTINCT ON) is used because the OFFERS
-  // rail orders by an AGGREGATE over the variants — the deepest discount any
-  // size of that product offers — and DISTINCT ON additionally constrains the
-  // leading ORDER BY expression, which every rail but one would violate.
+  /*
+   * Each rail is independent.
+   *
+   * Products are NOT excluded because they appeared in another rail.
+   * This is important for a small catalogue where the same product can
+   * legitimately belong to multiple Home sections.
+   */
+
   const filter = {
     POPULAR: Prisma.empty,
+
+    DAILY_ESSENTIALS: Prisma.sql`
+      AND p.is_daily_essential
+    `,
+
     BEST_SELLERS: Prisma.empty,
-    DAILY_ESSENTIALS: Prisma.sql`AND p.is_daily_essential`,
+
     RECENTLY_ADDED: Prisma.empty,
-    OFFERS: Prisma.sql`AND sv.mrp_paise > sv.price_paise`,
+
+    OFFERS: Prisma.sql`
+      AND sv.mrp_paise > sv.price_paise
+    `,
   }[rail];
 
+  /*
+   * Best Sellers are based on actual delivered order quantities.
+   *
+   * A product with zero delivered sales will NOT appear in Best Sellers.
+   */
+  const bestSellerJoin =
+    rail === "BEST_SELLERS"
+      ? Prisma.sql`
+          JOIN orders o
+            ON o.store_id = ${storeId}::uuid
+           AND o.status = 'DELIVERED'
+
+          JOIN order_items oi
+            ON oi.order_id = o.id
+           AND oi.variant_id = v.id
+        `
+      : Prisma.empty;
+
   const ordering = {
-    POPULAR: Prisma.sql`p.popularity_score DESC`,
-    BEST_SELLERS: Prisma.sql`p.popularity_score DESC`,
-    DAILY_ESSENTIALS: Prisma.sql`p.popularity_score DESC`,
-    RECENTLY_ADDED: Prisma.sql`p.created_at DESC`,
-    OFFERS: Prisma.sql`MAX((sv.mrp_paise - sv.price_paise)::float / NULLIF(sv.mrp_paise, 0)) DESC`,
+    POPULAR: Prisma.sql`
+      p.popularity_score DESC
+    `,
+
+    DAILY_ESSENTIALS: Prisma.sql`
+      p.popularity_score DESC
+    `,
+
+    BEST_SELLERS: Prisma.sql`
+      SUM(oi.qty) DESC
+    `,
+
+    RECENTLY_ADDED: Prisma.sql`
+      p.created_at DESC
+    `,
+
+    OFFERS: Prisma.sql`
+      MAX(
+        (sv.mrp_paise - sv.price_paise)::float
+        / NULLIF(sv.mrp_paise, 0)
+      ) DESC
+    `,
   }[rail];
 
   const rows = await client.$queryRaw<{ id: string }[]>`
     SELECT p.id
     FROM products p
-    JOIN product_variants v ON v.product_id = p.id
-      AND v.status = 'ACTIVE' AND v.deleted_at IS NULL
-    JOIN store_variants sv ON sv.variant_id = v.id AND sv.store_id = ${storeId}::uuid
-    WHERE p.status = 'ACTIVE' AND p.deleted_at IS NULL
-      AND sv.is_available AND (sv.stock_qty - sv.reserved_qty) > 0
+
+    JOIN product_variants v
+      ON v.product_id = p.id
+      AND v.status = 'ACTIVE'
+      AND v.deleted_at IS NULL
+
+    JOIN store_variants sv
+      ON sv.variant_id = v.id
+      AND sv.store_id = ${storeId}::uuid
+
+    ${bestSellerJoin}
+
+    WHERE p.status = 'ACTIVE'
+      AND p.deleted_at IS NULL
+
+      AND sv.is_available
+      AND (sv.stock_qty - sv.reserved_qty) > 0
+
       ${filter}
-    GROUP BY p.id, p.popularity_score, p.created_at
-    ORDER BY ${ordering}, p.id ASC
-    LIMIT ${limit}`;
+
+    GROUP BY
+      p.id,
+      p.popularity_score,
+      p.created_at
+
+    ORDER BY
+      ${ordering},
+      p.id ASC
+
+    LIMIT ${limit}
+  `;
 
   return rows.map((row) => row.id);
 }
@@ -248,13 +328,19 @@ export async function listRelatedProductIds(
   const rows = await client.$queryRaw<{ id: string }[]>`
     SELECT p.id
     FROM products p
-    JOIN product_variants v ON v.product_id = p.id
-      AND v.status = 'ACTIVE' AND v.deleted_at IS NULL
-    JOIN store_variants sv ON sv.variant_id = v.id AND sv.store_id = ${storeId}::uuid
+    JOIN product_variants v
+      ON v.product_id = p.id
+      AND v.status = 'ACTIVE'
+      AND v.deleted_at IS NULL
+    JOIN store_variants sv
+      ON sv.variant_id = v.id
+      AND sv.store_id = ${storeId}::uuid
     WHERE p.category_id = ${categoryId}::uuid
       AND p.id <> ${excludeProductId}::uuid
-      AND p.status = 'ACTIVE' AND p.deleted_at IS NULL
-      AND sv.is_available AND (sv.stock_qty - sv.reserved_qty) > 0
+      AND p.status = 'ACTIVE'
+      AND p.deleted_at IS NULL
+      AND sv.is_available
+      AND (sv.stock_qty - sv.reserved_qty) > 0
     GROUP BY p.id, p.popularity_score
     ORDER BY p.popularity_score DESC, p.id ASC
     LIMIT ${limit}`;

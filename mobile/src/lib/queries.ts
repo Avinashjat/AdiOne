@@ -5,7 +5,7 @@
  * eligibility, totals. The app renders them and never derives them.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CartDto,
   CategoryDto,
@@ -15,42 +15,52 @@ import type {
   OrderSummaryDto,
   ProductDetailDto,
   ProductSummaryDto,
-} from '@shared';
-import { api } from './api';
+} from "@shared";
+import { api } from "./api";
 
 export const keys = {
-  home: ['home'] as const,
-  categories: ['categories'] as const,
-  products: (params: string) => ['products', params] as const,
-  product: (id: string) => ['product', id] as const,
-  search: (term: string) => ['search', term] as const,
-  cart: ['cart'] as const,
-  orders: ['orders'] as const,
-  order: (id: string) => ['order', id] as const,
+  home: ["home"] as const,
+  categories: ["categories"] as const,
+  products: (params: string) => ["products", params] as const,
+  product: (id: string) => ["product", id] as const,
+  search: (term: string) => ["search", term] as const,
+  cart: ["cart"] as const,
+  orders: ["orders"] as const,
+  order: (id: string) => ["order", id] as const,
 };
 
 export function useHomeFeed() {
-  return useQuery({ queryKey: keys.home, queryFn: () => api.get<HomeFeedDto>('/home') });
+  return useQuery({
+    queryKey: keys.home,
+    queryFn: () => api.get<HomeFeedDto>("/home"),
+  });
 }
 
 export function useCategories() {
   return useQuery({
     queryKey: keys.categories,
-    queryFn: () => api.get<CategoryDto[]>('/categories?includeChildren=true&withCounts=true'),
+    queryFn: () =>
+      api.get<CategoryDto[]>(
+        "/categories?includeChildren=true&withCounts=true",
+      ),
     // The category tree changes a few times a month; refetching it on every
     // screen entry would waste a round trip the customer waits for.
     staleTime: 10 * 60_000,
   });
 }
 
-export function useProducts(params: { categoryId?: string; inStock?: boolean }) {
-  const query = new URLSearchParams({ limit: '30' });
-  if (params.categoryId) query.set('categoryId', params.categoryId);
-  if (params.inStock) query.set('inStock', 'true');
+export function useProducts(params: {
+  categoryId?: string;
+  inStock?: boolean;
+}) {
+  const query = new URLSearchParams({ limit: "30" });
+  if (params.categoryId) query.set("categoryId", params.categoryId);
+  if (params.inStock) query.set("inStock", "true");
 
   return useQuery({
     queryKey: keys.products(query.toString()),
-    queryFn: () => api.get<CursorPage<ProductSummaryDto>>(`/products?${query.toString()}`),
+    queryFn: () =>
+      api.get<CursorPage<ProductSummaryDto>>(`/products?${query.toString()}`),
   });
 }
 
@@ -76,13 +86,15 @@ export function useSearch(term: string) {
 /* Cart                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export function useCart() {
+export function useCart(distanceKm: number | null = null) {
   return useQuery({
-    queryKey: keys.cart,
-    queryFn: () => api.get<CartDto>('/cart'),
-    // Always revalidated server-side, so a stale local copy is never used to
-    // decide anything.
-    staleTime: 0,
+    queryKey: [...keys.cart, distanceKm],
+    queryFn: () =>
+      api.get<CartDto>(
+        distanceKm !== null
+          ? `/cart?distanceKm=${encodeURIComponent(distanceKm)}`
+          : "/cart",
+      ),
   });
 }
 
@@ -95,31 +107,105 @@ export function useCart() {
  */
 export function useCartMutations() {
   const queryClient = useQueryClient();
-  const write = (data: CartDto) => queryClient.setQueryData(keys.cart, data);
+
+  const write = (data: CartDto) => {
+    queryClient.setQueryData([...keys.cart, null], data);
+
+    queryClient.invalidateQueries({
+      queryKey: keys.cart,
+    });
+  };
+
 
   const addItem = useMutation({
-    mutationFn: (input: { variantId: string; qty?: number }) =>
-      api.post<CartDto>('/cart/items', { variantId: input.variantId, qty: input.qty ?? 1 }),
-    onSuccess: write,
+    mutationFn: (input: {
+      variantId: string;
+      qty?: number;
+      distanceKm?: number | null;
+    }) => {
+      const distanceKm = input.distanceKm ?? null;
+
+      const query =
+        distanceKm !== null
+          ? `?distanceKm=${encodeURIComponent(distanceKm)}`
+          : "";
+
+      return api.post<CartDto>(`/cart/items${query}`, {
+        variantId: input.variantId,
+        qty: input.qty ?? 1,
+      });
+    },
+
+    onSuccess: (data) => {
+      write(data);
+    },
   });
 
   const updateQty = useMutation({
-    mutationFn: (input: { cartItemId: string; qty: number }) =>
-      api.patch<CartDto>(`/cart/items/${input.cartItemId}`, { qty: input.qty }),
-    onSuccess: write,
+    mutationFn: (input: {
+      cartItemId: string;
+      qty: number;
+      distanceKm?: number | null;
+    }) => {
+      const distanceKm = input.distanceKm ?? null;
+
+      const query =
+        distanceKm !== null
+          ? `?distanceKm=${encodeURIComponent(distanceKm)}`
+          : "";
+
+      return api.patch<CartDto>(`/cart/items/${input.cartItemId}${query}`, {
+        qty: input.qty,
+      });
+    },
+
+    onSuccess: (data) => {
+      write(data);
+    },
   });
 
   const removeItem = useMutation({
-    mutationFn: (cartItemId: string) => api.delete<CartDto>(`/cart/items/${cartItemId}`),
-    onSuccess: write,
+    mutationFn: (input: { cartItemId: string; distanceKm?: number | null }) => {
+      const distanceKm = input.distanceKm ?? null;
+
+      const query =
+        distanceKm !== null
+          ? `?distanceKm=${encodeURIComponent(distanceKm)}`
+          : "";
+
+      return api.delete<CartDto>(`/cart/items/${input.cartItemId}${query}`);
+    },
+
+    onSuccess: (data) => {
+      write(data);
+    },
   });
 
   const applyCoupon = useMutation({
-    mutationFn: (code: string) => api.post<CartDto>('/cart/coupon', { code }),
-    onSuccess: write,
+    mutationFn: (input: { code: string; distanceKm?: number | null }) => {
+      const distanceKm = input.distanceKm ?? null;
+
+      const query =
+        distanceKm !== null
+          ? `?distanceKm=${encodeURIComponent(distanceKm)}`
+          : "";
+
+      return api.post<CartDto>(`/cart/coupon${query}`, {
+        code: input.code,
+      });
+    },
+
+    onSuccess: (data) => {
+      write(data);
+    },
   });
 
-  return { addItem, updateQty, removeItem, applyCoupon };
+  return {
+    addItem,
+    updateQty,
+    removeItem,
+    applyCoupon,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -129,7 +215,7 @@ export function useCartMutations() {
 export function useOrders() {
   return useQuery({
     queryKey: keys.orders,
-    queryFn: () => api.get<CursorPage<OrderSummaryDto>>('/orders?limit=20'),
+    queryFn: () => api.get<CursorPage<OrderSummaryDto>>("/orders?limit=20"),
   });
 }
 

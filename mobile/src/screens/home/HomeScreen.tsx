@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import React, { useEffect } from "react";
 
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -53,7 +54,17 @@ export default function HomeScreen({
   const feed = useHomeFeed();
   const cart = useCartActions();
 
-  const { location, serviceability } = useLocation();
+  const { location, serviceability, refresh } = useLocation();
+
+  useEffect(() => {
+    void refresh();
+
+    const interval = setInterval(() => {
+      void refresh();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [refresh]);
 
   /* ================================================================
      LOADING
@@ -258,7 +269,7 @@ export default function HomeScreen({
           </View>
         )}
 
-        {!serviceability?.storeOpen && (
+        {serviceability?.storeOpen === false && (
           <View style={styles.noticeContainer}>
             <NoticeStrip message="The store is closed right now. You can still add items and order when we open." />
           </View>

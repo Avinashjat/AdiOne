@@ -7,7 +7,7 @@
  * change in the admin panel is visible on the very next request.
  */
 
-import type { Category } from '@prisma/client';
+import type { Category } from "@prisma/client";
 import {
   CodPolicy,
   ErrorCode,
@@ -18,17 +18,20 @@ import {
   type ProductDetailDto,
   type ProductSummaryDto,
   type VariantDto,
-} from '../../shared';
-import { discountPercent } from '../../shared/money';
-import { resolveItemCodPolicy } from '../../shared/cod';
-import { AppError } from '../../common/errors';
-import { prisma } from '../../infra/db/prisma';
-import { search as searchProvider, configureSearchThresholds } from '../../infra/search';
-import * as configService from '../configuration/configuration.service';
-import { ConfigKey } from '../../shared';
-import * as storeService from '../stores/store.service';
-import * as repository from './catalog.repository';
-import type { HydratedProduct, ProductSort } from './catalog.repository';
+} from "../../shared";
+import { discountPercent } from "../../shared/money";
+import { resolveItemCodPolicy } from "../../shared/cod";
+import { AppError } from "../../common/errors";
+import { prisma } from "../../infra/db/prisma";
+import {
+  search as searchProvider,
+  configureSearchThresholds,
+} from "../../infra/search";
+import * as configService from "../configuration/configuration.service";
+import { ConfigKey } from "../../shared";
+import * as storeService from "../stores/store.service";
+import * as repository from "./catalog.repository";
+import type { HydratedProduct, ProductSort } from "./catalog.repository";
 
 /* -------------------------------------------------------------------------- */
 /* Category tree                                                              */
@@ -48,7 +51,10 @@ const CATEGORY_CACHE_TTL_MS = 60_000;
 let categoryCache: CategoryCache | null = null;
 
 async function getCategoryMap(): Promise<Map<string, Category>> {
-  if (categoryCache && Date.now() - categoryCache.loadedAt < CATEGORY_CACHE_TTL_MS) {
+  if (
+    categoryCache &&
+    Date.now() - categoryCache.loadedAt < CATEGORY_CACHE_TTL_MS
+  ) {
     return categoryCache.byId;
   }
   const categories = await repository.findAllCategories();
@@ -80,7 +86,9 @@ async function codChainForCategory(categoryId: string): Promise<CodPolicy[]> {
   return chain;
 }
 
-async function categoryPathFor(categoryId: string): Promise<CategoryDto['id'][]> {
+async function categoryPathFor(
+  categoryId: string,
+): Promise<CategoryDto["id"][]> {
   const byId = await getCategoryMap();
   const path: string[] = [];
   let current = byId.get(categoryId);
@@ -137,9 +145,12 @@ export async function listCategories(options: {
   });
 }
 
-export async function listSubcategories(parentId: string): Promise<CategoryDto[]> {
+export async function listSubcategories(
+  parentId: string,
+): Promise<CategoryDto[]> {
   const parent = await repository.findCategoryById(parentId);
-  if (!parent) throw new AppError(ErrorCode.NOT_FOUND, { message: 'Category not found.' });
+  if (!parent)
+    throw new AppError(ErrorCode.NOT_FOUND, { message: "Category not found." });
   return listCategories({ parentId, withCounts: true });
 }
 
@@ -167,7 +178,7 @@ async function mappingContext(): Promise<MappingContext> {
 }
 
 function toVariantDto(
-  variant: HydratedProduct['variants'][number],
+  variant: HydratedProduct["variants"][number],
   categoryChain: CodPolicy[],
   productAllowCod: CodPolicy,
   context: MappingContext,
@@ -267,11 +278,15 @@ async function toDetailDto(
     variants: product.variants
       .map((variant) => toVariantDto(variant, chain, product.allowCod, context))
       .filter((variant): variant is VariantDto => variant !== null),
-    attributes: (product.attributes ?? {}) as ProductDetailDto['attributes'],
+    attributes: (product.attributes ?? {}) as ProductDetailDto["attributes"],
     categoryPath: pathIds
       .map((id) => byId.get(id))
       .filter((category): category is Category => category !== undefined)
-      .map((category) => ({ id: category.id, name: category.name, slug: category.slug })),
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+      })),
   };
 }
 
@@ -287,13 +302,17 @@ export async function mapProducts(
 /* -------------------------------------------------------------------------- */
 
 function encodeCursor(sortValue: number, id: string): string {
-  return Buffer.from(`${sortValue}|${id}`).toString('base64url');
+  return Buffer.from(`${sortValue}|${id}`).toString("base64url");
 }
 
-function decodeCursor(cursor: string | null): { sortValue: number; id: string } | null {
+function decodeCursor(
+  cursor: string | null,
+): { sortValue: number; id: string } | null {
   if (!cursor) return null;
   try {
-    const [sortValue, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+    const [sortValue, id] = Buffer.from(cursor, "base64url")
+      .toString("utf8")
+      .split("|");
     if (!id || sortValue === undefined) return null;
     return { sortValue: Number(sortValue), id };
   } catch {
@@ -324,7 +343,9 @@ export async function listProducts(
   if (targetCategoryId) {
     const category = await repository.findCategoryById(targetCategoryId);
     if (!category) {
-      throw new AppError(ErrorCode.NOT_FOUND, { message: 'Category not found.' });
+      throw new AppError(ErrorCode.NOT_FOUND, {
+        message: "Category not found.",
+      });
     }
     categoryPath = category.path;
   }
@@ -334,7 +355,7 @@ export async function listProducts(
     categoryPath,
     brandId: input.brandId ?? null,
     inStockOnly: input.inStock ?? false,
-    sort: input.sort ?? 'POPULAR',
+    sort: input.sort ?? "POPULAR",
     // One extra row tells us whether another page exists without a COUNT.
     limit: input.limit + 1,
     cursor: decodeCursor(input.cursor ?? null),
@@ -357,12 +378,14 @@ export async function listProducts(
   };
 }
 
-export async function getProductDetail(productId: string): Promise<ProductDetailDto> {
+export async function getProductDetail(
+  productId: string,
+): Promise<ProductDetailDto> {
   const store = await storeService.getActiveStore();
   const product = await repository.findProductById(productId, store.id);
 
   if (!product || product.status !== ProductStatus.ACTIVE) {
-    throw new AppError(ErrorCode.NOT_FOUND, { message: 'Product not found.' });
+    throw new AppError(ErrorCode.NOT_FOUND, { message: "Product not found." });
   }
 
   return toDetailDto(product, await mappingContext());
@@ -422,7 +445,8 @@ export async function searchProducts(input: {
   return {
     items,
     hasMore,
-    nextCursor: hasMore && last ? encodeCursor(last.rank, last.productId) : null,
+    nextCursor:
+      hasMore && last ? encodeCursor(last.rank, last.productId) : null,
   };
 }
 
@@ -450,14 +474,16 @@ export async function subscribeBackInStock(
   });
 
   if (!offer) {
-    throw new AppError(ErrorCode.NOT_FOUND, { message: 'This item is not sold here.' });
+    throw new AppError(ErrorCode.NOT_FOUND, {
+      message: "This item is not sold here.",
+    });
   }
 
   // Already back — say so rather than promising a notification that would fire
   // immediately and look broken.
   if (offer.isAvailable && offer.stockQty - offer.reservedQty > 0) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, {
-      message: 'Good news — this item is already back in stock.',
+      message: "Good news — this item is already back in stock.",
     });
   }
 
@@ -477,11 +503,11 @@ export async function subscribeBackInStock(
 /* -------------------------------------------------------------------------- */
 
 const RAILS = [
-  { key: 'POPULAR', title: 'Popular Products' },
-  { key: 'DAILY_ESSENTIALS', title: 'Daily Essentials' },
-  { key: 'BEST_SELLERS', title: 'Best Sellers' },
-  { key: 'RECENTLY_ADDED', title: 'Recently Added' },
-  { key: 'OFFERS', title: 'Offers for You' },
+  { key: "DAILY_ESSENTIALS", title: "Daily Essentials" },
+  { key: "POPULAR", title: "Popular Products" },
+  { key: "BEST_SELLERS", title: "Best Sellers" },
+  { key: "RECENTLY_ADDED", title: "Recently Added" },
+  { key: "OFFERS", title: "Offers for You" },
 ] as const;
 
 /**
@@ -495,25 +521,40 @@ export async function getHomeFeed(): Promise<HomeFeedDto> {
   const store = await storeService.getActiveStore();
   const context = await mappingContext();
 
-  const categories = await listCategories({ parentId: null, includeChildren: true });
+  const categories = await listCategories({
+    parentId: null,
+    includeChildren: true,
+  });
 
-  const rails = await Promise.all(
-    RAILS.map(async (rail) => {
-      const ids = await repository.listRailProductIds(store.id, rail.key, 10);
-      const products = await repository.hydrateProducts(ids, store.id);
-      return {
-        key: rail.key,
-        title: rail.title,
-        products: await Promise.all(
-          products.map((product) => toSummaryDto(product, context)),
-        ),
-      };
-    }),
-  );
+  /*
+   * Each Home rail is independent.
+   *
+   * The same product is allowed to appear in multiple rails.
+   *
+   * Example:
+   * - Amul Curd can be in Popular Products
+   * - Amul Curd can be in Recently Added
+   * - Amul Curd can be in Offers for You
+   *
+   * This is intentional. We do NOT exclude products between rails.
+   */
+  const rails: HomeFeedDto["rails"] = [];
+
+  for (const rail of RAILS) {
+    const ids = await repository.listRailProductIds(store.id, rail.key, 10);
+
+    const products = await repository.hydrateProducts(ids, store.id);
+
+    rails.push({
+      key: rail.key,
+      title: rail.title,
+      products: await Promise.all(
+        products.map((product) => toSummaryDto(product, context)),
+      ),
+    });
+  }
 
   return {
-    // Banners are seeded content in V1; the offers strip in the mockup maps to
-    // coupon codes rather than a separate promotions engine (PRD §2.1 C7).
     banners: [],
     categories,
     rails: rails.filter((rail) => rail.products.length > 0),
