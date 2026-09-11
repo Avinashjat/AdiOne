@@ -3,20 +3,24 @@
  *
  * Three steps, because image bytes never travel through the API's JSON body
  * (PRD §42):
+ *
  *   1. ask the API for an upload target
- *   2. PUT the raw bytes at it
+ *   2. PUT the raw bytes directly to storage
  *   3. hand the resulting key back to the API to attach to a product
  *
- * Step 2 is the awkward one. With STORAGE_PROVIDER=local the target is our own
- * `/admin/uploads/direct` route, which is behind the admin auth gate and needs
- * the bearer token. With `s3` it is a presigned URL on another host, where
- * sending an Authorization header would break the signature. So the token goes
- * on only when the target is our own API.
+ * With STORAGE_PROVIDER=local:
+ *   - upload target points to our own API
+ *   - bearer token is required
+ *
+ * With STORAGE_PROVIDER=s3:
+ *   - upload target is a presigned Supabase/S3 URL
+ *   - bearer token must NOT be sent
  */
 
-import { getAccessToken } from './api';
+import { getAccessToken } from "./api";
 
-const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? '/api/v1';
+const API_BASE =
+  (import.meta.env["VITE_API_URL"] as string | undefined) ?? "/api/v1";
 
 interface PresignedUpload {
   uploadUrl: string;
@@ -25,34 +29,59 @@ interface PresignedUpload {
   expiresInSeconds: number;
 }
 
-/** 5 MB — mirrors MAX_IMAGE_BYTES on the server, so we fail before uploading. */
+/** 5 MB — mirrors MAX_IMAGE_BYTES on the server. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+export const ACCEPTED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+];
 
+/**
+ * Validate an image before asking the backend for a presigned URL.
+ */
 export function validateImage(file: File): string | null {
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-    return 'Please choose a JPEG, PNG or WebP image.';
+    return "Please choose a JPEG, PNG, WebP or AVIF image.";
   }
+
   if (file.size > MAX_IMAGE_BYTES) {
-    return 'Images must be 5 MB or smaller.';
+    return "Images must be 5 MB or smaller.";
   }
+
   return null;
 }
 
 /**
- * True when the upload target is our own API rather than object storage.
+ * Returns true when the upload target belongs to our own API.
  *
- * Keyed on the PATH, not the origin. An earlier version compared origins and
- * broke the moment the API handed back a `localhost` upload URL while the panel
- * was pointed at a tunnel: the origins differed, the token was withheld as if
- * this were S3, and every upload 401'd. The route is ours by definition and a
- * presigned S3 URL never carries it, so the path is the reliable signal.
+ * Local storage:
+ *   /api/v1/admin/uploads/direct
+ *
+ * S3/Supabase:
+ *   https://xxxxx.supabase.co/storage/v1/s3/...
+ *
+ * For S3/Supabase presigned URLs we must NOT send Authorization.
  */
 function needsBearerToken(uploadUrl: string): boolean {
   try {
     const target = new URL(uploadUrl, window.location.origin);
-    if (target.pathname.includes('/admin/uploads/direct')) return true;
+
+    /**
+     * Local development upload route.
+     *
+     * This route is protected by admin authentication.
+     */
+    if (target.pathname.includes("/admin/uploads/direct")) {
+      return true;
+    }
+
+    /**
+     * If the upload URL belongs to our API origin,
+     * treat it as an API upload.
+     */
     return target.origin === new URL(API_BASE, window.location.origin).origin;
   } catch {
     return false;
@@ -60,41 +89,121 @@ function needsBearerToken(uploadUrl: string): boolean {
 }
 
 /**
- * Uploads one image and returns the storage key.
+ * Upload one product image.
  *
- * The key is meaningless on its own — call `POST /admin/product-images` with it
- * to attach it to a product, or it is simply orphaned bytes.
+ * Flow:
+ *
+ *   Browser
+ *      ↓
+ *   POST /admin/uploads/presign
+ *      ↓
+ *   Backend creates signed URL
+ *      ↓
+ *   Browser PUTs image directly to Supabase/S3
+ *      ↓
+ *   return storage key
+ *
+ * The caller then sends that key to:
+ *
+ *   POST /admin/product-images
  */
 export async function uploadProductImage(
   file: File,
-  presign: (body: { fileName: string; contentType: string }) => Promise<PresignedUpload>,
+  presign: (body: {
+    fileName: string;
+    contentType: string;
+  }) => Promise<PresignedUpload>,
 ): Promise<string> {
+  /* ---------------------------------------------------------------------- */
+  /* 1. Validate image                                                      */
+  /* ---------------------------------------------------------------------- */
+
   const invalid = validateImage(file);
-  if (invalid) throw new Error(invalid);
 
-  const target = await presign({ fileName: file.name, contentType: file.type });
+  if (invalid) {
+    throw new Error(invalid);
+  }
 
+  /* ---------------------------------------------------------------------- */
+  /* 2. Ask backend for presigned upload URL                                */
+  /* ---------------------------------------------------------------------- */
+
+  const target = await presign({
+    fileName: file.name,
+    contentType: file.type,
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* 3. Prepare headers                                                     */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * IMPORTANT:
+   *
+   * target.headers contains the exact Content-Type used by the backend
+   * while generating the S3 signature.
+   *
+   * Do not change it.
+   */
   const headers: Record<string, string> = {
     ...target.headers,
-    'ngrok-skip-browser-warning': 'true',
   };
+
+  /* ---------------------------------------------------------------------- */
+  /* 4. Add bearer token ONLY for our local API upload route                */
+  /* ---------------------------------------------------------------------- */
+
   const token = getAccessToken();
+
   if (token && needsBearerToken(target.uploadUrl)) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(target.uploadUrl, { method: 'PUT', headers, body: file });
+  /* ---------------------------------------------------------------------- */
+  /* 5. Upload directly to storage                                         */
+  /* ---------------------------------------------------------------------- */
+
+  const response = await fetch(target.uploadUrl, {
+    method: "PUT",
+
+    /**
+     * Do not manually set Content-Type here.
+     *
+     * It is already supplied by target.headers and MUST match the
+     * value that was signed by the backend.
+     */
+    headers,
+
+    body: file,
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* 6. Handle upload errors                                                */
+  /* ---------------------------------------------------------------------- */
+
   if (!response.ok) {
-    // 401 here almost always means the API's own base URL is misconfigured, so
-    // say that rather than "try again" — retrying cannot fix it.
     if (response.status === 401) {
       throw new Error(
-        'The upload was rejected as unauthenticated. Check that API_BASE_URL in the ' +
-          'backend .env matches the address this panel talks to, then restart the API.',
+        "The upload was rejected as unauthenticated. Check that API_BASE_URL in the " +
+          "backend .env matches the address this panel talks to, then restart the API.",
       );
     }
-    throw new Error(`Could not upload the image (${response.status}). Please try again.`);
+
+    if (response.status === 403) {
+      throw new Error(
+        "The image upload was rejected by storage (403). " +
+          "The presigned upload URL may be invalid or expired.",
+      );
+    }
+
+    throw new Error(
+      `Could not upload the image (${response.status}). Please try again.`,
+    );
   }
+
+  /* ---------------------------------------------------------------------- */
+  /* 7. Return storage key                                                  */
+  /* ---------------------------------------------------------------------- */
 
   return target.key;
 }
